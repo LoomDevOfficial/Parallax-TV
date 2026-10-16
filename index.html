@@ -24,19 +24,62 @@
   <img class="brand__icon" src="icon.svg" alt="" width="36" height="36" draggable="false">
 </button>
 
+<button class="portal" id="portal" type="button" aria-label="Open navigator" aria-expanded="false" aria-controls="hub">
+  <span class="portal__icon portal__icon--open" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M16 16h4v4h-4zm-6 0h4v4h-4zm-6 0h4v4H4zm12-6h4v4h-4zm-6 0h4v4h-4zm-6 0h4v4H4zm12-6h4v4h-4zm-6 0h4v4h-4zM4 4h4v4H4z"></path></svg></span>
+  <span class="portal__icon portal__icon--close" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span>
+</button>
+
+<section class="hub" id="hub" aria-label="Navigator" hidden>
+  <nav class="hub__grid" aria-label="Destinations">
+    <button class="hub__item" type="button" data-go="search">
+      <span class="hub__disc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
+      <span class="hub__label">Search</span>
+    </button>
+    <button class="hub__item" type="button" data-go="movie">
+      <span class="hub__disc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg></span>
+      <span class="hub__label">Movies</span>
+    </button>
+    <button class="hub__item" type="button" data-go="tv">
+      <span class="hub__disc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg></span>
+      <span class="hub__label">TV Shows</span>
+    </button>
+    <button class="hub__item" type="button" data-go="settings">
+      <span class="hub__disc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
+      <span class="hub__label">Settings</span>
+    </button>
+  </nav>
+</section>
+
 <main id="content" class="content">
+  <div class="depth" id="depth" aria-hidden="true"></div>
   <form class="search" id="search" role="search" autocomplete="off">
     <div class="search__field">
       <svg class="search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-      <input class="search__input" id="search-input" type="search" name="q" placeholder=" " spellcheck="false" enterkeyhint="search">
-      <label class="search__placeholder" for="search-input">TMDB ID or Movie Name</label>
+      <input class="search__input" id="search-input" type="search" name="q" placeholder=" " spellcheck="false" enterkeyhint="search" role="combobox" aria-expanded="false" aria-controls="results-list" aria-autocomplete="list">
+      <label class="search__placeholder" for="search-input">Movie, Show or TMDB ID</label>
       <span class="search__sheen" aria-hidden="true"></span>
     </div>
     <button class="search__play" type="submit" aria-label="Play">
       <svg class="search__play-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 5.27368C5 3.56682 6.82609 2.48151 8.32538 3.2973L20.687 10.0235C22.2531 10.8756 22.2531 13.124 20.687 13.9762L8.32538 20.7024C6.82609 21.5181 5 20.4328 5 18.726V5.27368Z"></path></svg>
     </button>
+    <div class="results" id="results" hidden>
+      <p class="results__label" id="results-label"></p>
+      <div class="results__tabs" role="tablist" aria-label="Filter results by type">
+        <button class="results__tab" type="button" role="tab" data-filter="all" aria-selected="true">All</button>
+        <button class="results__tab" type="button" role="tab" data-filter="movie" aria-selected="false">Movies</button>
+        <button class="results__tab" type="button" role="tab" data-filter="tv" aria-selected="false">TV</button>
+      </div>
+      <div class="results__list" id="results-list" role="listbox" aria-label="Search results"></div>
+      <div class="results__bar" id="results-bar" hidden>
+        <button class="results__nav" id="results-prev" type="button" aria-label="Previous result"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+        <div class="results__dots" id="results-dots" role="group" aria-label="Choose a result"></div>
+        <button class="results__nav" id="results-next" type="button" aria-label="Next result"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+      </div>
+    </div>
     <p class="search__hint" id="search-hint" aria-live="polite"></p>
   </form>
+  <section class="rows" id="rows" aria-label="Discover"></section>
+  <section class="settings" id="settings" aria-label="Settings" hidden></section>
 </main>
 
 <section class="player" id="player" aria-label="Player" hidden>
