@@ -164,9 +164,9 @@
   }
 
   const CINESRC = 'https://cinesrc.st';
-  const TMDB_KEY = '61a09c0871365a16273d146bf94fc545';
-  const TMDB_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI2MWEwOWMwODcxMzY1YTE2MjczZDE0NmJmOTRmYzU0NSIsIm5iZiI6MTc5MTYyNDE1OS4yNDE5OTk5LCJzdWIiOiI2YWNhMDNkZjY4MjI5MmZlMDU0ODBjNzYiLCJzY29wZXMiOlsiYXBpX3JlYWQiXSwidmVyc2lvbiI6MX0.stXimpCMAzBK1KztgBm9r-_JSLyVcc1rhFCe7w0eP60';
-  const TMDB_API = 'https://api.themoviedb.org/3';
+  const TMDB_KEY = '';
+  const TMDB_TOKEN = '';
+  const TMDB_API = `${window.location.origin}/api/tmdb`;
   const TMDB_IMG = 'https://image.tmdb.org/t/p/';
   const LOADER_MIN = 2600;
   const EASE_MORPH = 'cubic-bezier(.76, 0, .24, 1)';
@@ -2253,14 +2253,9 @@
     const key = path + (params ? `?${new URLSearchParams(params).toString()}` : '');
     if (tmdbCache.has(key)) return tmdbCache.get(key);
     const url = new URL(TMDB_API + path);
-    url.searchParams.set('api_key', TMDB_KEY);
     if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
     try {
-      let res = await fetch(url, { headers: { accept: 'application/json' }, signal });
-      if (res.status === 401 && TMDB_TOKEN) {
-        url.searchParams.delete('api_key');
-        res = await fetch(url, { headers: { accept: 'application/json', Authorization: `Bearer ${TMDB_TOKEN}` }, signal });
-      }
+      const res = await fetch(url, { headers: { accept: 'application/json' }, credentials: 'same-origin', signal });
       if (res.status === 404) {
         tmdbCache.set(key, null);
         return null;
