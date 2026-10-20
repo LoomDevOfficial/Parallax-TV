@@ -193,10 +193,12 @@
   const ICONS = {
     tv: '<rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline>',
     film: '<rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line>',
+    close: '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>',
     left: '<polyline points="15 18 9 12 15 6"></polyline>',
     right: '<polyline points="9 18 15 12 9 6"></polyline>',
     down: '<polyline points="6 9 12 15 18 9"></polyline>',
     check: '<polyline points="20 6 9 17 4 12"></polyline>',
+    ticket: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"></path><path d="M13 5v2"></path><path d="M13 17v2"></path><path d="M13 11v2"></path>',
     play: '<path fill="currentColor" stroke="none" d="M5 5.27368C5 3.56682 6.82609 2.48151 8.32538 3.2973L20.687 10.0235C22.2531 10.8756 22.2531 13.124 20.687 13.9762L8.32538 20.7024C6.82609 21.5181 5 20.4328 5 18.726V5.27368Z"></path>'
   };
 
@@ -310,6 +312,11 @@
   const tabsPill = el('span', 'results__pill');
   tabsPill.setAttribute('aria-hidden', 'true');
   if (tabsBar) tabsBar.prepend(tabsPill);
+  const resultsCount = results ? el('span', 'results__count') : null;
+  if (resultsCount) {
+    resultsCount.setAttribute('aria-hidden', 'true');
+    results.append(resultsCount);
+  }
   const resultsPrev = document.getElementById('results-prev');
   const resultsNext = document.getElementById('results-next');
   const resultsDots = document.getElementById('results-dots');
@@ -402,6 +409,7 @@
   function paintDots() {
     const many = searchItems.length > 1;
     if (results) results.classList.toggle('is-cycling', many);
+    if (resultsCount) resultsCount.textContent = many && searchActive >= 0 ? `${searchActive + 1} / ${searchItems.length}` : '';
     if (!resultsDots) return;
     if (resultsBar) resultsBar.hidden = !many;
     if (!many) {
@@ -560,7 +568,7 @@
     const base = [];
     if (item.vote_average) base.push([`★ ${item.vote_average.toFixed(1)}`, 'result__rating']);
     if (year) base.push([year]);
-    base.push([kind === 'tv' ? 'TV Series' : 'Film']);
+    base.push([kind === 'tv' ? 'TV Series' : 'Movie']);
     paintMeta(meta, base);
     body.append(meta);
     const more = el('span', 'result__more');
@@ -714,6 +722,7 @@
 
   function chooseResult(item) {
     const kind = item.media_type === 'tv' ? 'tv' : 'movie';
+    rememberSearch(lastQuery);
     closeResults();
     if (searchInput) searchInput.value = '';
     openPlayer({ type: kind, id: String(item.id) }, { push: true, fullscreen: true });
@@ -803,6 +812,136 @@
     if (results && !results.hidden && search && !search.contains(e.target)) closeResults();
   }, true);
 
+  const RECENT_KEY = 'parallax:recent';
+  const RECENT_MAX = 5;
+  let recents = loadRecents();
+  const recentsBox = search && searchInput ? el('div', 'recents') : null;
+  const recentsList = el('div', 'recents__list');
+
+  function loadRecents() {
+    try {
+      const list = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+      return Array.isArray(list) ? list.filter((q) => typeof q === 'string' && q.trim()).slice(0, RECENT_MAX) : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function saveRecents() {
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
+    } catch (err) {
+      console.warn('[Parallax TV] Could not save recent searches:', err);
+    }
+  }
+
+  function rememberSearch(query) {
+    const text = (query || '').trim().slice(0, 60);
+    if (!text) return;
+    recents = [text, ...recents.filter((q) => q.toLowerCase() !== text.toLowerCase())].slice(0, RECENT_MAX);
+    saveRecents();
+    renderRecents();
+  }
+
+  function forgetSearch(query, chip) {
+    recents = recents.filter((q) => q !== query);
+    saveRecents();
+    if (!recents.length || !chip || reduced.matches) {
+      paintRecents();
+      if (recentsBox && !recentsBox.classList.contains('is-visible')) return;
+      renderRecents();
+      return;
+    }
+    if (chip.classList.contains('is-leaving')) return;
+    chip.classList.add('is-leaving');
+    const width = chip.offsetWidth;
+    const out = chip.animate(
+      [
+        { opacity: 1, filter: 'blur(0px)', transform: 'scale(1)', width: `${width}px`, marginRight: '0px' },
+        { opacity: 0, filter: 'blur(4px)', transform: 'scale(.86)', width: '0px', marginRight: '-8px' }
+      ],
+      { duration: 420, easing: EASE, fill: 'forwards' }
+    );
+    settle([out]).then(() => {
+      if (chip.isConnected) chip.remove();
+    });
+  }
+
+  function renderRecents() {
+    if (!recentsBox) return;
+    recentsList.replaceChildren(...recents.map((query, i) => {
+      const chip = el('span', 'recent');
+      chip.style.setProperty('--ri', String(i));
+      const pick = el('button', 'recent__pick', query);
+      pick.type = 'button';
+      pick.title = query;
+      pick.addEventListener('click', () => {
+        searchInput.value = query;
+        searchInput.focus({ preventScroll: true });
+        hideHint();
+        runSearch(query, 0);
+        paintRecents();
+      });
+      const drop = el('button', 'recent__drop');
+      drop.type = 'button';
+      drop.setAttribute('aria-label', `Remove ${query} from recent searches`);
+      drop.append(svgIcon('close', 'recent__drop-icon'));
+      drop.addEventListener('click', () => forgetSearch(query, chip));
+      chip.append(pick, drop);
+      return chip;
+    }));
+  }
+
+  function paintRecents() {
+    if (!recentsBox || !searchInput) return;
+    const focused = document.activeElement === searchInput || recentsBox.contains(document.activeElement);
+    const show = focused && !content.classList.contains('is-quiet') && !searchInput.value.trim() && recents.length > 0 && !panelOpen && !(hint && hint.classList.contains('is-visible'));
+    if (show && !recentsBox.classList.contains('is-visible')) renderRecents();
+    recentsBox.classList.toggle('is-visible', show);
+  }
+
+  if (recentsBox) {
+    recentsBox.setAttribute('role', 'group');
+    recentsBox.setAttribute('aria-label', 'Recent searches');
+    recentsBox.append(el('span', 'recents__label', 'Recent'), recentsList);
+    recentsBox.addEventListener('pointerdown', (e) => e.preventDefault());
+    recentsBox.addEventListener('focusout', () => requestAnimationFrame(paintRecents));
+    search.append(recentsBox);
+    renderRecents();
+    const wake = () => content.classList.remove('is-quiet');
+    searchInput.addEventListener('focus', paintRecents);
+    searchInput.addEventListener('input', () => {
+      wake();
+      paintRecents();
+    });
+    searchInput.addEventListener('blur', () => {
+      wake();
+      requestAnimationFrame(paintRecents);
+    });
+    search.addEventListener('pointerdown', () => {
+      if (!content.classList.contains('is-quiet')) return;
+      wake();
+      requestAnimationFrame(paintRecents);
+    });
+    if (hint) new MutationObserver(paintRecents).observe(hint, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  if (field && searchInput) {
+    const clear = el('button', 'search__clear');
+    clear.type = 'button';
+    clear.setAttribute('aria-label', 'Clear search');
+    clear.append(svgIcon('close', 'search__clear-icon'));
+    clear.addEventListener('pointerdown', (e) => e.preventDefault());
+    clear.addEventListener('click', () => {
+      searchInput.value = '';
+      hideHint();
+      runSearch('', 0);
+      searchInput.focus({ preventScroll: true });
+      paintRecents();
+    });
+    field.append(clear);
+  }
+
   const rowsMount = document.getElementById('rows');
 
   function posterCard(item, kind, extra = {}) {
@@ -833,7 +972,7 @@
     const meta = [];
     if (item.vote_average) meta.push(`★ ${item.vote_average.toFixed(1)}`);
     if (year) meta.push(year);
-    body.append(el('span', 'poster__meta', extra.sub || meta.join(' · ') || (kind === 'tv' ? 'TV Series' : 'Film')));
+    body.append(el('span', 'poster__meta', extra.sub || meta.join(' · ') || (kind === 'tv' ? 'TV Series' : 'Movie')));
     if (extra.badge) art.append(badgeEl(extra));
     if (extra.progress > 0) art.append(progressBar(extra.progress));
     art.append(el('span', 'poster__sheen'));
@@ -923,7 +1062,7 @@
     const meta = [];
     if (item.vote_average) meta.push(`★ ${item.vote_average.toFixed(1)}`);
     if (year) meta.push(year);
-    body.append(el('span', 'wide__title', title), el('span', 'wide__meta', extra.sub || meta.join(' · ') || (kind === 'tv' ? 'TV Series' : 'Film')));
+    body.append(el('span', 'wide__title', title), el('span', 'wide__meta', extra.sub || meta.join(' · ') || (kind === 'tv' ? 'TV Series' : 'Movie')));
     if (extra.desc) body.append(el('span', 'wide__desc', extra.desc));
     art.append(el('span', 'poster__sheen'), body);
     if (extra.badge) art.append(badgeEl(extra));
@@ -963,21 +1102,28 @@
       return tag;
     }
     tag.classList.add('is-ticket');
-    tag.style.setProperty('--gt', `${-Math.round(performance.now() % 6000)}ms`);
+    tag.style.setProperty('--gt', `${-Math.round(performance.now() % 4500)}ms`);
+    const live = el('span', 'spot__kicker-live');
+    live.append(svgIcon('ticket', 'spot__kicker-icon'), el('span', 'spot__kicker-text', 'Now showing'));
     const num = el('span', 'spot__kicker-num');
     num.append(el('b', null, String(i + 1).padStart(2, '0')), document.createTextNode(`/ ${String(total).padStart(2, '0')}`));
-    tag.append(el('span', 'spot__kicker-live', 'Now showing'), num);
+    tag.append(live, num);
     return tag;
   }
 
-  function frameCard(item, kind, rank) {
+  function rankCard(item, kind, rank) {
     const title = titleOf(item, kind);
     const year = yearOf(kind === 'tv' ? item.first_air_date : item.release_date);
-    const card = el('button', rank < 3 ? 'frame is-podium' : 'frame');
+    const n = String(rank + 1);
+    const card = el('button', rank < 3 ? 'rank is-podium' : 'rank');
     card.type = 'button';
-    card.setAttribute('aria-label', `Number ${rank + 1}, ${title}${year ? `, ${year}` : ''}`);
-    const tilt = el('span', 'frame__tilt');
-    const art = el('span', 'frame__art');
+    card.setAttribute('aria-label', `Number ${n}, ${title}${year ? `, ${year}` : ''}`);
+    const num = el('span', 'rank__num', n);
+    num.dataset.n = n;
+    num.setAttribute('aria-hidden', 'true');
+    const col = el('span', 'rank__col');
+    const tilt = el('span', 'rank__tilt');
+    const art = el('span', 'rank__art');
     if (item.poster_path) {
       const img = el('img');
       img.alt = '';
@@ -985,26 +1131,31 @@
       img.draggable = false;
       img.loading = 'lazy';
       img.addEventListener('load', () => img.classList.add('is-loaded'), { once: true });
-      img.addEventListener('error', () => img.remove(), { once: true });
+      img.addEventListener('error', () => img.replaceWith(svgIcon('film', 'ep__fallback')), { once: true });
       img.src = `${TMDB_IMG}w342${item.poster_path}`;
       art.append(img);
+    } else {
+      art.append(svgIcon('film', 'ep__fallback'));
     }
-    art.append(el('span', 'frame__glare'));
+    if (item.vote_average) {
+      const score = el('span', 'rank__score');
+      score.append(el('b', null, '★'), document.createTextNode(item.vote_average.toFixed(1)));
+      art.append(score);
+    }
+    art.append(el('span', 'rank__glare'));
     tilt.append(art);
-    const plaque = el('span', 'frame__plaque');
-    plaque.append(
-      el('span', 'frame__rank', `Nº ${String(rank + 1).padStart(2, '0')}`),
-      el('span', 'frame__title', title),
-      el('span', 'frame__meta', [item.vote_average ? `★ ${item.vote_average.toFixed(1)}` : '', year].filter(Boolean).join(' · '))
-    );
-    card.append(el('span', 'frame__lamp'), el('span', 'frame__light'), tilt, plaque);
+    const votes = item.vote_count ? `${new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(item.vote_count)} votes` : '';
+    const body = el('span', 'rank__body');
+    body.append(el('span', 'rank__title', title), el('span', 'rank__meta', [year, votes].filter(Boolean).join(' · ') || 'Movie'));
+    col.append(tilt, body);
+    card.append(num, col);
     card.addEventListener('pointermove', (e) => {
       if (reduced.matches || e.pointerType !== 'mouse') return;
       const r = tilt.getBoundingClientRect();
       const x = (e.clientX - r.left) / r.width - 0.5;
       const y = (e.clientY - r.top) / r.height - 0.5;
-      card.style.setProperty('--rx', `${(-y * 10).toFixed(2)}deg`);
-      card.style.setProperty('--ry', `${(x * 12).toFixed(2)}deg`);
+      card.style.setProperty('--rx', `${(-y * 7).toFixed(2)}deg`);
+      card.style.setProperty('--ry', `${(x * 9).toFixed(2)}deg`);
       card.style.setProperty('--gx', `${((x + 0.5) * 100).toFixed(1)}%`);
       card.style.setProperty('--gy', `${((y + 0.5) * 100).toFixed(1)}%`);
       card.style.setProperty('--lx', x.toFixed(3));
@@ -1053,9 +1204,9 @@
 
   function buildCards(kind, items, opts) {
     if (opts.layout === 'timeline') return timelineGroups(kind, items, opts);
-    if (opts.layout === 'gallery') {
-      return items.slice(0, 12).map((item, i) => {
-        const card = frameCard(item, kind, i);
+    if (opts.layout === 'ranked') {
+      return items.slice(0, 10).map((item, i) => {
+        const card = rankCard(item, kind, i);
         card.style.setProperty('--rd', `${Math.round((opts.delay || 0) + Math.min(i, 9) * 60)}ms`);
         return card;
       });
@@ -1178,7 +1329,7 @@
         { label: 'Trending', sub: 'What everyone is watching', path: '/movie/popular', layout: 'curve' },
         { label: 'In Theaters', sub: 'Playing on the big screen', path: '/movie/now_playing', layout: 'wide' },
         { label: 'Premiere Calendar', sub: 'Coming soon to theaters', path: '/discover/movie', layout: 'timeline' },
-        { label: 'Hall of Fame', sub: 'The highest rated films of all time', path: '/movie/top_rated', layout: 'gallery' }
+        { label: 'Hall of Fame', sub: 'The highest rated films of all time', path: '/movie/top_rated', layout: 'ranked' }
       ]
     },
     tv: {
@@ -1201,6 +1352,9 @@
   let hubState = 'closed';
   let hubExit = null;
   let hubReturn = null;
+  let peekTimer = 0;
+  let peeked = null;
+  const hubGrid = hub ? hub.querySelector('.hub__grid') : null;
 
   function sectionParams(path) {
     const params = { language: 'en-US', page: '1' };
@@ -1302,8 +1456,8 @@
     if (out) out.cancel();
   }
 
-  function spotSkeleton() {
-    const sec = el('section', 'spot is-skeleton');
+  function spotSkeleton(kind) {
+    const sec = el('section', SECTIONS[kind] ? `spot spot--${kind} is-skeleton` : 'spot is-skeleton');
     sec.setAttribute('aria-hidden', 'true');
     return sec;
   }
@@ -1318,19 +1472,26 @@
     const stage = el('div', 'spot__stage');
     const shade = el('div', 'spot__shade');
     const info = el('div', 'spot__info');
-    const ticks = el('div', 'spot__ticks');
+    const ticks = el('div', kind === 'tv' ? 'spot__dial' : 'spot__ticks');
+    if (kind === 'tv') {
+      ticks.setAttribute('role', 'group');
+      ticks.setAttribute('aria-label', 'Channels');
+    }
     let index = -1;
 
     const tickButtons = picks.map((item, i) => {
-      const tick = el('button', 'spot__tick');
-      const fill = el('span', 'spot__fill');
+      const tick = el('button', kind === 'tv' ? 'spot__chan' : 'spot__tick');
+      const fill = el('span', kind === 'tv' ? 'spot__chfill' : 'spot__fill');
       tick.type = 'button';
       tick.setAttribute('aria-label', `Show ${titleOf(item, kind)}`);
       if (kind === 'tv') {
-        const chInfo = el('span', 'spot__chinfo');
-        const chMeta = [item.vote_average ? `★ ${item.vote_average.toFixed(1)}` : '', yearOf(item.first_air_date)].filter(Boolean).join(' · ');
-        chInfo.append(el('span', 'spot__chname', titleOf(item, kind)), el('span', 'spot__chmeta', chMeta));
-        tick.append(el('span', 'spot__ch', String(i + 1).padStart(2, '0')), chInfo, el('span', 'spot__peek', titleOf(item, kind)));
+        const body = el('span', 'spot__chbody');
+        const clip = el('span', 'spot__chclip');
+        const track = el('span', 'spot__chtrack');
+        track.append(fill);
+        clip.append(el('span', 'spot__chname', titleOf(item, kind)), track);
+        body.append(clip);
+        tick.append(el('span', 'spot__chnum', String(i + 1).padStart(2, '0')), body);
       } else {
         const thumb = el('span', 'spot__thumb');
         const img = el('img');
@@ -1339,16 +1500,23 @@
         img.draggable = false;
         img.src = `${TMDB_IMG}w300${item.backdrop_path}`;
         thumb.append(img);
-        tick.append(thumb);
+        const tInfo = el('span', 'spot__tinfo');
+        const bar = el('span', 'spot__bar');
+        bar.append(fill);
+        const tMeta = [yearOf(item.release_date), item.vote_average ? `★ ${item.vote_average.toFixed(1)}` : ''].filter(Boolean).join(' · ');
+        tInfo.append(el('span', 'spot__tname', titleOf(item, kind)), el('span', 'spot__tmeta', tMeta || 'Movie'), bar);
+        tick.append(thumb, tInfo);
       }
-      tick.append(fill);
       tick.addEventListener('click', () => show(i));
       fill.addEventListener('animationend', () => {
         if (tick.classList.contains('is-active')) show((index + 1) % picks.length);
       });
       return tick;
     });
-    if (picks.length > 1) ticks.append(...tickButtons);
+    if (picks.length > 1) {
+      if (kind === 'movie') ticks.append(el('span', 'spot__ticks-label', 'Featured'));
+      ticks.append(...tickButtons);
+    }
 
     function fillInfo(item, i, details) {
       const year = yearOf(kind === 'tv' ? item.first_air_date : item.release_date);
@@ -1356,7 +1524,7 @@
       const parts = [];
       if (item.vote_average) parts.push([`★ ${item.vote_average.toFixed(1)}`, 'result__rating']);
       if (year) parts.push([year]);
-      parts.push([kind === 'tv' ? 'TV Series' : 'Film']);
+      parts.push([kind === 'tv' ? 'TV Series' : 'Movie']);
       paintMeta(meta, parts);
       const play = el('button', 'spot__play');
       play.type = 'button';
@@ -1553,7 +1721,7 @@
     const requests = def.rows.map((row) => [row.path, sectionParams(row.path)]);
     if (fresh) requests.forEach(([path, params]) => tmdbCache.delete(`${path}?${new URLSearchParams(params).toString()}`));
     const head = stagger(sectionHead(kind), 0);
-    const spot = stagger(spotSkeleton(), 1);
+    const spot = stagger(spotSkeleton(kind), 1);
     const watching = watchingEntries(kind);
     const watchSlot = watching.length ? stagger(skeletonRow('Continue Watching', 'Pick up where you left off', kind === 'tv' ? 'wide' : 'curve'), 2) : null;
     const offset = watchSlot ? 3 : 2;
@@ -1642,6 +1810,7 @@
   }
 
   function finishHub() {
+    setPeek(null);
     if (hub) {
       hub.getAnimations().forEach((a) => a.cancel());
       hub.classList.remove('is-leaving', 'is-travelling');
@@ -1772,7 +1941,10 @@
     await settle([fade]);
     if (hubState === 'travelling') finishHub();
     await settle([arrive]);
-    if (target === 'search' && searchInput && window.matchMedia('(hover: hover)').matches) searchInput.focus({ preventScroll: true });
+    if (target === 'search' && searchInput && window.matchMedia('(hover: hover)').matches && document.activeElement !== searchInput) {
+      content.classList.add('is-quiet');
+      searchInput.focus({ preventScroll: true });
+    }
   }
 
   if (portal) portal.addEventListener('click', () => {
@@ -1796,6 +1968,181 @@
       hubItems[(index + step + hubItems.length) % hubItems.length].focus({ preventScroll: true });
     });
   }
+
+  const HUB_PEEKS = {
+    search: { kicker: 'Find anything', text: 'Search any movie or show by name, TMDB ID or link.' },
+    movie: { kicker: 'Now trending', text: 'The Spotlight, In Theaters, the Premiere Calendar and the Hall of Fame.', path: '/movie/popular' },
+    tv: { kicker: 'On air', text: 'Trending shows, new episodes this week and the best series ever made.', path: '/tv/popular' },
+    settings: { kicker: 'Your player', text: 'Playback, quality and sources, with a live preview of every change.' }
+  };
+
+  function setPeek(item) {
+    if (peeked === item) return;
+    peeked = item;
+    hubItems.forEach((node) => node.classList.toggle('is-peek', node === item));
+    if (hubGrid) hubGrid.classList.toggle('has-peek', Boolean(item));
+    if (item) fillPeek(item);
+  }
+
+  function fillPeek(item) {
+    const art = item.querySelector('.hub__peek-art');
+    if (!art) return;
+    const go = item.dataset.go;
+    if (go === 'search' || go === 'settings') {
+      const kicker = item.querySelector('.hub__peek-kicker');
+      if (go === 'search' && kicker) kicker.textContent = recents.length ? 'Recent searches' : 'Try searching';
+      const chips = go === 'search'
+        ? (recents.length ? recents.slice(0, 3) : ['Breaking Bad', '1396'])
+        : [prefs.autoplay ? 'Autoplay on' : 'Autoplay off', `${prefs.seek}s seek`, prefs.quality === 'auto' ? 'Auto quality' : `${prefs.quality}p`];
+      art.className = 'hub__peek-art is-chips';
+      art.replaceChildren(...chips.map((text, n) => {
+        const chip = el('span', 'hub__chip', text);
+        chip.style.setProperty('--pi', String(n));
+        return chip;
+      }));
+      return;
+    }
+    const def = HUB_PEEKS[go];
+    if (!def || !def.path || art.dataset.filled) return;
+    art.dataset.filled = 'true';
+    art.className = 'hub__peek-art is-posters';
+    art.replaceChildren(...Array.from({ length: 3 }, (_, n) => {
+      const slot = el('span', 'hub__thumb');
+      slot.style.setProperty('--pi', String(n));
+      return slot;
+    }));
+    tmdb(def.path, undefined, sectionParams(def.path)).then((data) => {
+      const list = data && Array.isArray(data.results) ? data.results.filter((r) => r.poster_path).slice(0, 3) : [];
+      if (!list.length) {
+        delete art.dataset.filled;
+        return;
+      }
+      [...art.children].forEach((slot, n) => {
+        const pick = list[n];
+        if (!pick) {
+          slot.remove();
+          return;
+        }
+        const img = el('img');
+        img.alt = '';
+        img.decoding = 'async';
+        img.draggable = false;
+        img.addEventListener('load', () => img.classList.add('is-loaded'), { once: true });
+        img.src = `${TMDB_IMG}w185${pick.poster_path}`;
+        slot.append(img);
+      });
+    }).catch(() => { delete art.dataset.filled; });
+  }
+
+  hubItems.forEach((item, i) => {
+    const main = el('span', 'hub__main');
+    main.append(...item.childNodes);
+    const key = el('kbd', 'hub__key', String(i + 1));
+    key.setAttribute('aria-hidden', 'true');
+    main.append(key);
+    const def = HUB_PEEKS[item.dataset.go] || {};
+    const peek = el('span', 'hub__peek');
+    peek.setAttribute('aria-hidden', 'true');
+    const inner = el('span', 'hub__peek-inner');
+    inner.append(el('span', 'hub__peek-kicker', def.kicker || ''), el('span', 'hub__peek-text', def.text || ''), el('span', 'hub__peek-art'));
+    peek.append(inner);
+    item.append(main, peek);
+    item.setAttribute('aria-keyshortcuts', String(i + 1));
+    item.addEventListener('pointerenter', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      clearTimeout(peekTimer);
+      peekTimer = setTimeout(() => {
+        if (hubState === 'open' || hubState === 'opening') setPeek(item);
+      }, peeked ? 90 : 160);
+    });
+    item.addEventListener('focus', () => {
+      clearTimeout(peekTimer);
+      if (item.matches(':focus-visible') && (hubState === 'open' || hubState === 'opening')) setPeek(item);
+    });
+  });
+
+  if (hubGrid) {
+    hubGrid.addEventListener('pointerleave', () => {
+      clearTimeout(peekTimer);
+      peekTimer = setTimeout(() => {
+        if (hubState === 'open' || hubState === 'opening') setPeek(null);
+      }, 200);
+    });
+  }
+
+  if (hub) {
+    const tip = el('div', 'hub__hint');
+    tip.setAttribute('aria-hidden', 'true');
+    tip.innerHTML = '<kbd>1</kbd><span>to</span><kbd>4</kbd><span>Jump to a section</span><i></i><kbd>Esc</kbd><span>Close</span>';
+    hub.append(tip);
+  }
+
+  let jumpTo = null;
+  let jumpOut = null;
+
+  async function quickJump(target) {
+    jumpTo = target;
+    if (jumpOut) return;
+    if (target === view) {
+      jumpTo = null;
+      return;
+    }
+    const still = reduced.matches;
+    closeResults();
+    hideHint();
+    if (searchInput) searchInput.blur();
+    const from = Number(getComputedStyle(content).opacity);
+    content.getAnimations().forEach((a) => {
+      if (!('transitionProperty' in a) && !('animationName' in a)) a.cancel();
+    });
+    hubReturn = null;
+    const out = content.animate(
+      [
+        { opacity: from, filter: still ? 'blur(0px)' : `blur(${((1 - from) * 8).toFixed(2)}px)`, translate: '0 0' },
+        { opacity: 0, filter: still ? 'blur(0px)' : 'blur(8px)', translate: still ? '0 0' : '0 -6px' }
+      ],
+      { duration: still ? 120 : Math.round(110 + 150 * from), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' }
+    );
+    jumpOut = out;
+    await settle([out]);
+    jumpOut = null;
+    const dest = jumpTo;
+    jumpTo = null;
+    if (session || (hubState !== 'closed' && hubState !== 'closing')) {
+      out.cancel();
+      return;
+    }
+    if (dest && dest !== view) applyView(dest);
+    markCurrent();
+    const arrive = content.animate(
+      [
+        { opacity: 0, filter: still ? 'blur(0px)' : 'blur(8px)', translate: still ? '0 0' : '0 8px' },
+        { opacity: 1, filter: 'blur(0px)', translate: '0 0' }
+      ],
+      { duration: still ? 200 : 560, easing: EASE }
+    );
+    out.cancel();
+    await settle([arrive]);
+    if (view === 'search' && !jumpOut && !session && hubState === 'closed' && searchInput && window.matchMedia('(hover: hover)').matches && document.activeElement !== searchInput) {
+      content.classList.add('is-quiet');
+      searchInput.focus({ preventScroll: true });
+    }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || e.repeat || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || session || busy || switching) return;
+    if (e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    if (!/^[1-9]$/.test(e.key)) return;
+    const item = hubItems[Number(e.key) - 1];
+    if (!item) return;
+    e.preventDefault();
+    if (hubState === 'open' || hubState === 'opening') {
+      travel(item);
+      return;
+    }
+    if (hubState === 'travelling') return;
+    quickJump(item.dataset.go);
+  });
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || (hubState !== 'open' && hubState !== 'opening')) return;
@@ -1822,6 +2169,7 @@
     if (!input) return;
     const route = parseQuery(input.value);
     if (route) {
+      rememberSearch(input.value);
       hideHint();
       closeResults();
       openPlayer(route, { push: true, fullscreen: true });
