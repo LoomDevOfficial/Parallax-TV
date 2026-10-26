@@ -4,6 +4,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
+const crypto = require('node:crypto');
 
 loadEnvFile(path.join(__dirname, '.env'));
 
@@ -23,6 +24,10 @@ const TMDB_CACHE_MAX = 1500;
 const TMDB_TIMEOUT = 8000;
 const RATE_WINDOW = 60 * 1000;
 const RATE_MAX = 400;
+const DEV_CODE = (process.env.DEV_CODE || '').trim();
+const DEV_DIGEST = DEV_CODE ? crypto.createHash('sha256').update(DEV_CODE).digest() : null;
+const UNLOCK_WINDOW = 10 * 60 * 1000;
+const UNLOCK_MAX = 6;
 
 const PLAYER_HOSTS = ['https://cinesrc.st', 'https://*.cinesrc.st'];
 const IMAGE_HOSTS = ['https://image.tmdb.org', ...PLAYER_HOSTS];
@@ -69,6 +74,7 @@ const minified = new Map();
 const tmdbCache = new Map();
 const tmdbPending = new Map();
 const hits = new Map();
+const unlockHits = new Map();
 
 function loadEnvFile(file) {
   let text;
@@ -144,6 +150,9 @@ setInterval(() => {
   tmdbCache.forEach((entry, key) => {
     if (now > entry.expires) tmdbCache.delete(key);
   });
+  unlockHits.forEach((entry, ip) => {
+    if (now - entry.start > UNLOCK_WINDOW) unlockHits.delete(ip);
+  });
 }, RATE_WINDOW).unref();
 
 function crossSite(req) {
@@ -156,6 +165,30 @@ function crossSite(req) {
   } catch (err) {
     return true;
   }
+}
+
+function devUnlock(req, res) {
+  const headers = { 'Cache-Control': 'no-store' };
+  if (crossSite(req)) return sendJson(req, res, 403, '{"ok":false}', headers);
+  if (!DEV_DIGEST) return sendJson(req, res, 503, '{"ok":false}', headers);
+  const ip = clientIp(req);
+  const now = Date.now();
+  let entry = unlockHits.get(ip);
+  if (!entry || now - entry.start > UNLOCK_WINDOW) {
+    entry = { start: now, count: 0 };
+    unlockHits.set(ip, entry);
+  }
+  if (entry.count >= UNLOCK_MAX) {
+    return sendJson(req, res, 429, '{"ok":false}', { ...headers, 'Retry-After': String(Math.ceil((entry.start + UNLOCK_WINDOW - now) / 1000)) });
+  }
+  const code = String(req.headers['x-parallax-code'] || '').trim().slice(0, 64);
+  const digest = crypto.createHash('sha256').update(code).digest();
+  if (!code || !crypto.timingSafeEqual(digest, DEV_DIGEST)) {
+    entry.count += 1;
+    return sendJson(req, res, 401, '{"ok":false}', headers);
+  }
+  unlockHits.delete(ip);
+  return sendJson(req, res, 200, '{"ok":true}', headers);
 }
 
 async function tmdbProxy(req, res, url) {
@@ -369,6 +402,7 @@ const server = http.createServer((req, res) => {
       else res.destroy();
     });
   }
+  if (url.pathname === '/api/unlock') return devUnlock(req, res);
   if (url.pathname.startsWith('/api/')) return sendText(req, res, 404, 'Not found');
   const file = resolveFile(url.pathname);
   if (!file) return sendText(req, res, 404, 'Not found');

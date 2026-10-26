@@ -1,6 +1,6 @@
 {
   "name": "parallax-tv",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "private": true,
   "description": "Parallax TV - Movies & Shows",
   "main": "server.js",

@@ -6,7 +6,7 @@
 
 <p align="center">
   Movies and shows, made for the big screen.<br>
-  <sub>Pre-Alpha 0.0.4 · Desktop only</sub>
+  <sub>Pre-Alpha 0.0.5 · Desktop only</sub>
 </p>
 
 ---
@@ -21,6 +21,8 @@ Parallax TV is a free, minimal streaming hub built for PC. No clutter, minimal a
 - **Continue Watching.** Pick up exactly where you left off, with time left and progress on every episode.
 - **Navigator.** A quick hub to move between Search, Movies, TV Shows and Settings, with live previews of each.
 - **Player settings.** Autoplay, seek time, quality and source preferences, with a live preview of every change.
+- **Website quality.** Low, Medium or High effects, or Auto, which watches how smoothly the site runs on your device and adjusts for you.
+- **Friendly errors.** Clear notices when you go offline, when movie info can't load or when something breaks, with a one-click way to try again.
 
 ## Keyboard shortcuts
 

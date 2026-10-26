@@ -1,6 +1,25 @@
 (() => {
   'use strict';
 
+  const nativeAnimate = Element.prototype.animate;
+  if (nativeAnimate) {
+    Element.prototype.animate = function animate(keyframes, options) {
+      const tier = document.documentElement.dataset.fx;
+      if ((tier === 'low' || tier === 'medium') && Array.isArray(keyframes)) {
+        keyframes = keyframes.map((frame) => {
+          if (!frame || typeof frame.filter !== 'string' || !frame.filter.includes('blur(')) return frame;
+          const next = { ...frame };
+          next.filter = tier === 'low'
+            ? frame.filter.replace(/blur\((?:[^()]|\([^()]*\))*\)/g, '').trim()
+            : frame.filter.replace(/blur\(\s*([\d.]+)px\s*\)/g, (_, px) => `blur(${Number(px) / 2}px)`);
+          if (!next.filter) delete next.filter;
+          return next;
+        });
+      }
+      return nativeAnimate.call(this, keyframes, options);
+    };
+  }
+
   const MOBILE_UA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Silk|Kindle/i;
 
   function isMobile() {
@@ -191,6 +210,16 @@
   let playing = false;
 
   const ICONS = {
+    info: '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>',
+    success: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>',
+    alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>',
+    error: '<polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>',
+    offline: '<line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line>',
+    online: '<path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line>',
+    code: '<polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline>',
+    refresh: '<polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>',
+    gauge: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>',
+    lock: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>',
     tv: '<rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline>',
     film: '<rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line>',
     close: '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>',
@@ -1451,9 +1480,23 @@
       );
       await settle([out]);
     }
-    switching = false;
-    if (SECTIONS[view]) applyView(next);
-    if (out) out.cancel();
+    try {
+      if (SECTIONS[view]) applyView(next);
+      if (out) {
+        await frames();
+        const back = rowsMount.animate(
+          [
+            { opacity: 0, filter: 'blur(8px)', translate: '0 10px' },
+            { opacity: 1, filter: 'blur(0px)', translate: '0 0' }
+          ],
+          { duration: 520, easing: EASE }
+        );
+        out.cancel();
+        await settle([back]);
+      }
+    } finally {
+      switching = false;
+    }
   }
 
   function spotSkeleton(kind) {
@@ -1763,9 +1806,7 @@
     });
     if (!spotted) spot.remove();
     if (!filled) {
-      const empty = stagger(el('div', 'row__empty'), 1);
-      empty.append(el('span', null, "Couldn't load this section."), secondaryButton('Try again', () => loadSection(kind, true)));
-      rowsMount.append(empty);
+      rowsMount.append(stagger(sectionFailed(() => loadSection(kind, true)), 1));
     }
   }
 
@@ -1936,7 +1977,10 @@
     const fade = fadeHubOut(still);
     await wait(still ? 0 : 160);
     if (hubState !== 'travelling') return;
-    if (target !== view) applyView(target);
+    if (target !== view) {
+      applyView(target);
+      await frames();
+    }
     const arrive = bringContentBack(still);
     await settle([fade]);
     if (hubState === 'travelling') finishHub();
@@ -2112,7 +2156,14 @@
       out.cancel();
       return;
     }
-    if (dest && dest !== view) applyView(dest);
+    if (dest && dest !== view) {
+      applyView(dest);
+      await frames();
+      if (session) {
+        out.cancel();
+        return;
+      }
+    }
     markCurrent();
     const arrive = content.animate(
       [
@@ -2260,12 +2311,17 @@
         tmdbCache.set(key, null);
         return null;
       }
-      if (!res.ok) return undefined;
+      if (!res.ok) {
+        tmdbTrouble(res.status);
+        return undefined;
+      }
       const data = await res.json();
       tmdbCache.set(key, data);
       return data;
     } catch (err) {
-      if (err.name !== 'AbortError') console.warn('[Parallax TV] TMDB request failed:', err);
+      if (err.name === 'AbortError') return undefined;
+      console.warn('[Parallax TV] TMDB request failed:', err);
+      tmdbTrouble(0);
       return undefined;
     }
   }
@@ -2698,8 +2754,7 @@
       let side = upcoming ? `Airs ${shortDate(info.air_date)}` : info.runtime ? `${info.runtime}m` : '';
       if (watch.done) {
         card.classList.add('is-watched');
-        const mark = el('span', 'ep__done');
-        mark.append(svgIcon('check', 'ep__done-icon'), document.createTextNode('Watched'));
+        const mark = el('span', 'ep__done', 'Watched');
         still.append(mark, progressBar(1));
       } else if (watch.pct > 0) {
         card.classList.add('is-started');
@@ -2873,8 +2928,18 @@
     autonext: true,
     autoskip: false,
     prioritize: true,
-    febbox: ''
+    febbox: '',
+    fx: 'auto'
   };
+  const FX_TIERS = ['low', 'medium', 'high'];
+  const FX_LABEL = { low: 'Low', medium: 'Medium', high: 'High' };
+  const FX_OPTIONS = [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']];
+  const FX_AUTO_KEY = 'parallax:fx-auto';
+  const DEV_KEY = 'parallax:dev';
+  const fxProbe = { raf: 0, start: 0, last: 0, frames: 0, slow: 0, bad: 0, good: 0, raised: false, after: performance.now() + 3000 };
+  const fxCache = new Map();
+  const fxSheet = document.createElement('style');
+  document.head.append(fxSheet);
   const PREF_TOGGLES = [
     ['autoplay', 'Autoplay', 'Start playing as soon as it loads'],
     ['resume', 'Resume where you left off', 'Offers Continue or Restart when you come back'],
@@ -2906,10 +2971,12 @@
       localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     } catch (err) {
       console.warn('[Parallax TV] Could not save settings:', err);
+      storageFailed();
     }
     flashSaved();
     if (monitorPaint) monitorPaint(true);
     paintQuality(true);
+    fxApply();
   }
 
   function paintQuality(animate) {
@@ -3431,6 +3498,9 @@
         prefsSegment('quality', 'Quality', 'Preferred stream quality when available', QUALITIES)
       ]),
       settingsGroup('Sources', [prefsSwitch(toggles.prioritize), prefsToken()]),
+      settingsGroup('Display', [fxRow()]),
+      settingsGroup('Extras', [secretField()]),
+      ...(devOn() ? [devGroup()] : []),
       foot
     );
     let aimTimer = 0;
@@ -3489,6 +3559,7 @@
       localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
     } catch (err) {
       console.warn('[Parallax TV] Could not save progress:', err);
+      storageFailed();
     }
   }
 
@@ -3615,6 +3686,7 @@
     session.duration = 0;
     session.played = false;
     session.failed = false;
+    watchReset(false);
     clearTimeout(errorTimer);
     if (route.type === 'tv') rememberEpisode(route);
     clearTimeout(autoplayTimer);
@@ -3864,13 +3936,20 @@
         break;
       case 'cinesrc:ended':
         playing = false;
+        if (performance.now() < (session.settleAt || 0)) break;
+        session.ended = true;
         finishTitle(session.route);
         break;
       case 'cinesrc:timeupdate':
-      case 'cinesrc:seeked':
-        if (Number(event.data.duration) > 0) session.duration = Number(event.data.duration);
-        recordTime(session.route, Number(event.data.currentTime), Number(event.data.duration));
+      case 'cinesrc:seeked': {
+        if (performance.now() < (session.settleAt || 0)) break;
+        const time = Number(event.data.currentTime);
+        const duration = Number(event.data.duration) > 0 ? Number(event.data.duration) : session.duration;
+        if (duration > 0) session.duration = duration;
+        if (event.data.type === 'cinesrc:timeupdate') watchPeak(time, duration);
+        recordTime(session.route, time, duration);
         break;
+      }
       case 'cinesrc:volumechange':
         if (!event.data.muted && Number(event.data.volume) > 0) saveSound({ volume: Number(event.data.volume) });
         break;
@@ -3887,16 +3966,19 @@
         clearTimeout(errorTimer);
         if (event.data.sourceId !== undefined && event.data.sourceId !== null) saveServer(String(event.data.sourceId));
         break;
-      case 'cinesrc:nextepisode':
-        if (session.route.type === 'tv' && event.data.season && event.data.episode) {
-          const prev = progress[progressKey(session.route)];
-          if (prev && prev.d && prev.t / prev.d > 0.8) finishTitle(session.route);
-          else storeProgress();
-          session.route = { type: 'tv', id: session.route.id, s: String(event.data.season), e: String(event.data.episode) };
-          setHash(session.route, false);
-          rememberEpisode(session.route);
-        }
+      case 'cinesrc:nextepisode': {
+        const season = event.data.season;
+        const episode = Number(event.data.episode);
+        if (session.route.type !== 'tv' || season === undefined || season === null || !(episode > 0)) break;
+        if (String(season) === String(session.route.s) && String(episode) === String(session.route.e)) break;
+        if (episodeFinished()) finishTitle(session.route);
+        session.route = { type: 'tv', id: session.route.id, s: String(season), e: String(episode) };
+        watchReset(true);
+        setHash(session.route, false);
+        rememberEpisode(session.route);
+        storeProgress();
         break;
+      }
       case 'cinesrc:error':
         if (!session.played && !session.failed) {
           clearTimeout(errorTimer);
@@ -3917,6 +3999,849 @@
 
   const initialRoute = routeFromHash();
   if (initialRoute) openPlayer(initialRoute, { push: false, fullscreen: false });
+
+  function noticeHost() {
+    let host = document.querySelector('.toasts');
+    if (!host) {
+      host = el('div', 'toasts');
+      host.setAttribute('aria-live', 'polite');
+      document.body.append(host);
+    }
+    return host;
+  }
+
+  function pushNotice(message, opts = {}) {
+    const { tone = 'info', icon = '', detail = '', action = null, ms = 5200, gap = 6000, key = '' } = opts;
+    if (!pushNotice.seen) pushNotice.seen = new Map();
+    if (!pushNotice.renew) pushNotice.renew = new WeakMap();
+    const host = noticeHost();
+    if (key) {
+      const live = [...host.children].find((node) => node.dataset.key === key && !node.classList.contains('is-leaving'));
+      if (live) {
+        const renew = pushNotice.renew.get(live);
+        if (renew) renew();
+        return live;
+      }
+      if (Date.now() - (pushNotice.seen.get(key) || 0) < gap) return null;
+      pushNotice.seen.set(key, Date.now());
+    }
+    const toast = el('div', `toast toast--${tone}`);
+    toast.setAttribute('role', tone === 'error' || tone === 'warn' ? 'alert' : 'status');
+    if (key) toast.dataset.key = key;
+    const badge = el('span', 'toast__icon');
+    badge.append(svgIcon(icon || ({ success: 'success', warn: 'alert', error: 'error' }[tone] || 'info'), 'toast__glyph'));
+    const body = el('span', 'toast__body');
+    body.append(el('span', 'toast__title', message));
+    if (detail) body.append(el('span', 'toast__detail', detail));
+    toast.append(badge, body);
+    if (action) {
+      const button = el('button', 'toast__action', action.label);
+      button.type = 'button';
+      button.addEventListener('click', () => {
+        dropNotice(toast);
+        action.run();
+      });
+      toast.append(button);
+    }
+    const close = el('button', 'toast__close');
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Dismiss');
+    close.append(svgIcon('close', 'toast__close-icon'));
+    close.addEventListener('click', () => dropNotice(toast));
+    toast.append(close);
+    let timer = 0;
+    let left = ms;
+    let started = 0;
+    const run = () => {
+      if (!ms) return;
+      clearTimeout(timer);
+      started = Date.now();
+      timer = setTimeout(() => dropNotice(toast), left);
+    };
+    const hold = () => {
+      if (!ms || !started) return;
+      clearTimeout(timer);
+      left = Math.max(1200, left - (Date.now() - started));
+      started = 0;
+    };
+    pushNotice.renew.set(toast, () => {
+      left = ms;
+      if (started) run();
+    });
+    toast.addEventListener('pointerenter', hold);
+    toast.addEventListener('pointerleave', run);
+    toast.addEventListener('focusin', hold);
+    toast.addEventListener('focusout', (e) => {
+      if (!toast.contains(e.relatedTarget)) run();
+    });
+    const shown = [...host.children].filter((node) => !node.classList.contains('is-leaving'));
+    if (shown.length >= 3) dropNotice(shown[0]);
+    host.append(toast);
+    if (!reduced.matches) {
+      toast.animate(
+        [
+          { opacity: 0, filter: 'blur(6px)', translate: '0 14px', scale: '.97' },
+          { opacity: 1, filter: 'blur(0px)', translate: '0 0', scale: '1' }
+        ],
+        { duration: 480, easing: EASE }
+      );
+    }
+    run();
+    return toast;
+  }
+
+  function dropNotice(toast) {
+    if (!toast || !toast.isConnected || toast.classList.contains('is-leaving')) return;
+    toast.classList.add('is-leaving');
+    if (reduced.matches) {
+      toast.remove();
+      return;
+    }
+    const fade = toast.animate(
+      [{ opacity: 1, scale: '1' }, { opacity: 0, scale: '.97' }],
+      { duration: 240, easing: 'ease-in', fill: 'forwards' }
+    );
+    settle([fade]).then(() => {
+      if (!toast.isConnected) return undefined;
+      const style = getComputedStyle(toast);
+      const gapPx = toast.parentElement ? parseFloat(getComputedStyle(toast.parentElement).rowGap) || 0 : 0;
+      const side = toast.nextElementSibling ? 'marginBottom' : 'marginTop';
+      toast.style.overflow = 'hidden';
+      const collapse = toast.animate(
+        [
+          { height: `${toast.offsetHeight}px`, paddingTop: style.paddingTop, paddingBottom: style.paddingBottom, [side]: '0px' },
+          { height: '0px', paddingTop: '0px', paddingBottom: '0px', [side]: `${-gapPx}px` }
+        ],
+        { duration: 260, easing: EASE, fill: 'forwards' }
+      );
+      return settle([collapse]).then(() => toast.remove());
+    });
+  }
+
+  function shakeNode(node) {
+    if (!node || reduced.matches) return;
+    node.animate(
+      [
+        { translate: '0 0' },
+        { translate: '-6px 0' },
+        { translate: '5px 0' },
+        { translate: '-3px 0' },
+        { translate: '0 0' }
+      ],
+      { duration: 420, easing: EASE_IN_OUT }
+    );
+  }
+
+  function storageFailed() {
+    pushNotice("Couldn't save on this device", { tone: 'warn', detail: 'Your browser is blocking storage, so settings and progress may reset.', key: 'storage', gap: 60000 });
+  }
+
+  function offlineNotice() {
+    pushNotice("You're offline", { tone: 'warn', icon: 'offline', detail: "We'll pick things back up as soon as you reconnect.", key: 'net', gap: 0, ms: 0 });
+  }
+
+  function backOnline() {
+    const host = document.querySelector('.toasts');
+    const live = host ? [...host.children].find((node) => node.dataset.key === 'net') : null;
+    if (live) dropNotice(live);
+    pushNotice('Back online', { tone: 'success', icon: 'online', key: 'online', gap: 4000, ms: 3200 });
+    if (!session && rowsMount && SECTIONS[view] && rowsMount.querySelector('.row__empty')) loadSection(view, true);
+    if (panelOpen && lastQuery && !searchItems.length) showResults(0);
+  }
+
+  function tmdbTrouble(status) {
+    if (navigator.onLine === false) return;
+    if (status !== 0 && status !== 429 && status < 500) return;
+    if (status === 429) {
+      pushNotice('Things are a little busy', { tone: 'warn', detail: 'TMDB is getting a lot of requests. Give it a few seconds.', key: 'tmdb', gap: 20000 });
+    } else if (status === 503) {
+      pushNotice('Movie info is unavailable', { tone: 'error', detail: "The server isn't connected to TMDB right now.", key: 'tmdb', gap: 20000 });
+    } else {
+      pushNotice("Couldn't reach TMDB", { tone: 'warn', detail: 'Some titles may not load. Trying again usually helps.', key: 'tmdb', gap: 20000 });
+    }
+  }
+
+  function sectionFailed(retry) {
+    const offline = navigator.onLine === false;
+    const box = el('div', 'row__empty is-error');
+    box.setAttribute('role', 'alert');
+    const badge = el('span', 'row__empty-icon');
+    badge.append(svgIcon(offline ? 'offline' : 'alert', 'row__empty-glyph'));
+    const copy = el('span', 'row__empty-copy');
+    copy.append(
+      el('span', 'row__empty-title', offline ? "You're offline" : "Couldn't load this section"),
+      el('span', 'row__empty-text', offline ? "Reconnect and we'll load it right away." : 'TMDB might be having a moment. Give it another try.')
+    );
+    box.append(badge, copy, secondaryButton('Try again', retry));
+    return box;
+  }
+
+  function crashScreen({ preview = false } = {}) {
+    if (document.querySelector('.crash')) return;
+    const screen = el('div', 'crash');
+    screen.setAttribute('role', 'alertdialog');
+    screen.setAttribute('aria-modal', 'true');
+    screen.setAttribute('aria-labelledby', 'crash-title');
+    const card = el('div', 'crash__card');
+    const logo = el('img', 'crash__logo');
+    logo.src = 'icon.svg';
+    logo.alt = '';
+    logo.width = 52;
+    logo.height = 52;
+    const chip = el('span', 'crash__chip');
+    chip.append(svgIcon(preview ? 'code' : 'error', 'crash__chip-icon'), document.createTextNode(preview ? 'Preview' : 'Error'));
+    const title = el('h2', 'crash__title', 'Something went wrong');
+    title.id = 'crash-title';
+    const text = el('p', 'crash__text', 'Parallax TV hit an unexpected problem. Refreshing usually fixes it, and your settings and watch progress are safe.');
+    const actions = el('div', 'crash__actions');
+    const reload = el('button', 'crash__btn is-primary');
+    reload.type = 'button';
+    reload.append(svgIcon('refresh', 'crash__btn-icon'), el('span', null, 'Refresh'));
+    reload.addEventListener('click', () => window.location.reload());
+    const stay = el('button', 'crash__btn', preview ? 'Close preview' : 'Keep browsing');
+    stay.type = 'button';
+    actions.append(reload, stay);
+    card.append(logo, chip, title, text, actions);
+    screen.append(card);
+    let closed = false;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      shut();
+    };
+    function shut() {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('keydown', onKey, true);
+      if (reduced.matches) {
+        screen.remove();
+        return;
+      }
+      card.animate(
+        [
+          { opacity: 1, scale: '1', filter: 'blur(0px)' },
+          { opacity: 0, scale: '.97', filter: 'blur(6px)' }
+        ],
+        { duration: 280, easing: 'ease-in', fill: 'forwards' }
+      );
+      const out = screen.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 320, easing: 'ease-in', fill: 'forwards' });
+      settle([out]).then(() => screen.remove());
+    }
+    stay.addEventListener('click', shut);
+    document.addEventListener('keydown', onKey, true);
+    document.body.append(screen);
+    if (!reduced.matches) {
+      screen.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 360, easing: 'ease-out' });
+      card.animate(
+        [
+          { opacity: 0, scale: '.96', filter: 'blur(8px)', translate: '0 12px' },
+          { opacity: 1, scale: '1', filter: 'blur(0px)', translate: '0 0' }
+        ],
+        { duration: 620, delay: 60, easing: EASE, fill: 'backwards' }
+      );
+    }
+    stay.focus({ preventScroll: true });
+  }
+
+  function reportFault(err) {
+    try {
+      const now = Date.now();
+      reportFault.log = (reportFault.log || []).filter((at) => now - at < 15000);
+      reportFault.log.push(now);
+      console.error('[Parallax TV] Unexpected error:', err);
+      if (reportFault.log.length >= 3) {
+        reportFault.log = [];
+        crashScreen();
+        return;
+      }
+      pushNotice('Something went wrong', {
+        tone: 'error',
+        detail: 'Part of the page hit a snag. Refresh if anything looks off.',
+        key: 'crash',
+        gap: 15000,
+        action: { label: 'Refresh', run: () => window.location.reload() }
+      });
+    } catch (failure) {
+      console.error('[Parallax TV] Could not show the error:', failure);
+    }
+  }
+
+  function watchReset(settling) {
+    if (!session) return;
+    session.peakTime = 0;
+    session.peakDuration = 0;
+    session.ended = false;
+    session.settleAt = settling ? performance.now() + 1500 : 0;
+  }
+
+  function watchPeak(time, duration) {
+    if (!session || !Number.isFinite(time)) return;
+    if (time > (session.peakTime || 0)) session.peakTime = time;
+    if (duration > 0) session.peakDuration = duration;
+  }
+
+  function episodeFinished(route = session && session.route) {
+    if (!session || !playable(route)) return false;
+    if (session.ended) return true;
+    const saved = progress[progressKey(route)];
+    if (saved && saved.done) return true;
+    const time = Math.max(session.peakTime || 0, saved && saved.t > 0 ? saved.t : 0);
+    const duration = session.peakDuration || session.duration || (saved && saved.d) || 0;
+    if (duration > 0) return time / duration >= 0.8 || (time >= RESUME_MIN && duration - time <= 150);
+    return time >= 1200;
+  }
+
+  function fxGuess() {
+    const cores = navigator.hardwareConcurrency || 4;
+    const memory = navigator.deviceMemory || 8;
+    const saver = navigator.connection && navigator.connection.saveData;
+    if (saver || cores <= 2 || memory <= 2) return 'low';
+    if (cores <= 4 || memory <= 4) return 'medium';
+    return 'high';
+  }
+
+  function fxStored() {
+    const saved = readStore(FX_AUTO_KEY, null);
+    return saved && typeof saved === 'object' && FX_TIERS.includes(saved.t) ? saved : null;
+  }
+
+  function fxRemember(tier, down) {
+    try {
+      localStorage.setItem(FX_AUTO_KEY, JSON.stringify({ t: tier, down: Boolean(down) }));
+    } catch (err) {
+      storageFailed();
+    }
+  }
+
+  function fxTier() {
+    if (FX_TIERS.includes(prefs.fx)) return prefs.fx;
+    const stored = fxStored();
+    return stored ? stored.t : fxGuess();
+  }
+
+  function fxBlur(value, tier) {
+    if (tier === 'low') return value.replace(/blur\((?:[^()]|\([^()]*\))*\)/g, '').trim() || 'none';
+    return value.replace(/blur\(\s*([\d.]+)px\s*\)/g, (_, px) => `blur(${Number(px) / 2}px)`);
+  }
+
+  function fxSolid(style) {
+    const match = style.getPropertyValue('background-color').match(/rgba?\(([^)]+)\)/);
+    if (!match) return false;
+    const parts = match[1].split(/[\s,/]+/).filter(Boolean);
+    if (parts.length < 4) return false;
+    const alpha = parseFloat(parts[3]) * (parts[3].includes('%') ? 0.01 : 1);
+    return alpha < 0.6;
+  }
+
+  function fxDecls(style, tier) {
+    const back = style.getPropertyValue('backdrop-filter') || style.getPropertyValue('-webkit-backdrop-filter');
+    if (!back || back === 'none') return '';
+    const next = tier === 'low' ? 'none' : fxBlur(back, tier);
+    const out = [`backdrop-filter: ${next} !important`, `-webkit-backdrop-filter: ${next} !important`];
+    if (tier === 'low' && fxSolid(style)) out.push('background-color: rgba(22, 22, 26, .92)');
+    return out.join('; ');
+  }
+
+  function fxFrames(rule, tier) {
+    const steps = [...rule.cssRules];
+    const filters = steps.map((step) => step.style.getPropertyValue('filter'));
+    if (!filters.some((f) => f.includes('blur('))) return '';
+    if (!filters.some((f) => !f || /blur\(\s*0/.test(f))) return '';
+    const body = steps.map((step) => {
+      const decls = [...step.style].map((prop) => {
+        const value = step.style.getPropertyValue(prop);
+        return `${prop}: ${prop === 'filter' && value.includes('blur(') ? fxBlur(value, tier) : value}`;
+      });
+      return `${step.keyText} { ${decls.join('; ')} }`;
+    });
+    return `@keyframes ${rule.name} { ${body.join(' ')} }`;
+  }
+
+  function fxCss(tier) {
+    if (tier === 'high') return '';
+    if (fxCache.has(tier)) return fxCache.get(tier);
+    const walk = (rules) => {
+      const out = [];
+      [...rules].forEach((rule) => {
+        if (rule instanceof CSSStyleRule) {
+          const decls = fxDecls(rule.style, tier);
+          if (decls) out.push(`${rule.selectorText} { ${decls} }`);
+        } else if (rule instanceof CSSKeyframesRule) {
+          const text = fxFrames(rule, tier);
+          if (text) out.push(text);
+        } else if (rule instanceof CSSMediaRule) {
+          const inner = walk(rule.cssRules);
+          if (inner.length) out.push(`@media ${rule.media.mediaText} { ${inner.join(' ')} }`);
+        } else if (window.CSSSupportsRule && rule instanceof CSSSupportsRule) {
+          const inner = walk(rule.cssRules);
+          if (inner.length) out.push(`@supports ${rule.conditionText} { ${inner.join(' ')} }`);
+        }
+      });
+      return out;
+    };
+    const parts = [];
+    [...document.styleSheets].forEach((sheet) => {
+      if (sheet.ownerNode === fxSheet) return;
+      let rules = null;
+      try {
+        rules = sheet.cssRules;
+      } catch (err) {
+        rules = null;
+      }
+      if (rules) parts.push(...walk(rules));
+    });
+    const css = parts.join('\n');
+    if (css) fxCache.set(tier, css);
+    return css;
+  }
+
+  function fxApply() {
+    const tier = fxTier();
+    const root = document.documentElement;
+    if (!fxSheet.isConnected) document.head.append(fxSheet);
+    if (root.dataset.fx !== tier || fxSheet.dataset.tier !== tier) {
+      root.classList.add('is-fx-shift');
+      root.dataset.fx = tier;
+      fxSheet.dataset.tier = tier;
+      fxSheet.textContent = fxCss(tier);
+      frames().then(() => root.classList.remove('is-fx-shift'));
+    }
+    fxPaintNote();
+    fxWatch();
+  }
+
+  function fxWatch() {
+    if (FX_TIERS.includes(prefs.fx)) {
+      cancelAnimationFrame(fxProbe.raf || 0);
+      fxProbe.raf = 0;
+      return;
+    }
+    if (fxProbe.raf) return;
+    Object.assign(fxProbe, { begin: performance.now() + 3000, last: 0, start: 0, count: 0, slow: 0, score: 0, smooth: 0 });
+    fxProbe.raf = requestAnimationFrame(fxFrame);
+  }
+
+  function fxFrame(now) {
+    fxProbe.raf = requestAnimationFrame(fxFrame);
+    if (document.hidden || session || now < fxProbe.begin) {
+      fxProbe.last = 0;
+      return;
+    }
+    if (!fxProbe.last || now - fxProbe.last > 1000) {
+      Object.assign(fxProbe, { last: now, start: now, count: 0, slow: 0 });
+      return;
+    }
+    if (now - fxProbe.last > 50) fxProbe.slow++;
+    fxProbe.last = now;
+    fxProbe.count++;
+    if (now - fxProbe.start < 2000) return;
+    const fps = (fxProbe.count * 1000) / (now - fxProbe.start);
+    const jank = fxProbe.slow / Math.max(1, fxProbe.count);
+    Object.assign(fxProbe, { start: now, count: 0, slow: 0 });
+    fxJudge(fps, jank);
+  }
+
+  function fxJudge(fps, jank) {
+    const current = document.documentElement.dataset.fx;
+    const index = Math.max(0, FX_TIERS.indexOf(current));
+    if (fps < 24 || jank > 0.12) {
+      fxProbe.smooth = 0;
+      fxProbe.score += 1;
+      if (fxProbe.score < 2 || index === 0) return;
+      const next = FX_TIERS[index - 1];
+      fxProbe.score = 0;
+      fxProbe.begin = performance.now() + 3000;
+      fxRemember(next, true);
+      fxApply();
+      pushNotice(`Switched to ${FX_LABEL[next]} quality`, {
+        tone: 'info',
+        icon: 'gauge',
+        detail: 'Your device was working hard, so we eased off the effects to keep things smooth. You can change this in Settings.',
+        key: 'fx',
+        gap: 20000
+      });
+      return;
+    }
+    fxProbe.score = Math.max(0, fxProbe.score - 0.5);
+    if (fps < 50 || jank >= 0.02) return;
+    fxProbe.smooth += 1;
+    const stored = fxStored();
+    if (fxProbe.smooth < 30 || fxProbe.upgraded || index >= FX_TIERS.length - 1 || (stored && stored.down)) return;
+    fxProbe.upgraded = true;
+    fxProbe.smooth = 0;
+    fxRemember(FX_TIERS[index + 1], false);
+    fxApply();
+  }
+
+  function fxNote() {
+    if (prefs.fx === 'low') return 'Fewest effects, smoothest on older computers';
+    if (prefs.fx === 'medium') return 'Lighter glass and motion blur';
+    if (prefs.fx === 'high') return 'Every effect, glass and depth at full strength';
+    return `Matches your device. Running on ${FX_LABEL[fxTier()]} right now.`;
+  }
+
+  function fxPaintNote() {
+    const note = settingsMount ? settingsMount.querySelector('.prefs__fx .prefs__note') : null;
+    if (note) note.textContent = fxNote();
+  }
+
+  function fxRow() {
+    const row = prefsSegment('fx', 'Website quality', fxNote(), FX_OPTIONS);
+    delete row.dataset.pv;
+    row.classList.add('prefs__fx');
+    prefsPaint.push(fxPaintNote);
+    return row;
+  }
+
+  function retestFx() {
+    try {
+      localStorage.removeItem(FX_AUTO_KEY);
+    } catch (err) {
+      storageFailed();
+    }
+    cancelAnimationFrame(fxProbe.raf || 0);
+    fxProbe.raf = 0;
+    fxProbe.upgraded = false;
+    prefs.fx = 'auto';
+    savePrefs();
+    paintPrefs(true);
+    pushNotice('Performance check restarted', { tone: 'info', icon: 'gauge', detail: `Starting on ${FX_LABEL[fxGuess()]} and adjusting as you browse.`, key: 'retest', gap: 1500 });
+  }
+
+  function devState() {
+    const state = readStore(DEV_KEY, null);
+    return state && typeof state === 'object' ? state : {};
+  }
+
+  function devOn() {
+    return devState().on === true;
+  }
+
+  function setDev(patch) {
+    const next = { ...devState(), ...patch };
+    try {
+      localStorage.setItem(DEV_KEY, JSON.stringify(next));
+    } catch (err) {
+      storageFailed();
+    }
+    return next;
+  }
+
+  async function unlockDev(code) {
+    if (!/^[\x20-\x7e]{1,32}$/.test(code)) return 'wrong';
+    try {
+      const res = await fetch(`${window.location.origin}/api/unlock`, {
+        headers: { 'x-parallax-code': code },
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      if (res.ok) return 'ok';
+      if (res.status === 401) return 'wrong';
+      if (res.status === 429) return 'slow';
+      if (res.status === 503) return 'off';
+      return 'down';
+    } catch (err) {
+      return 'down';
+    }
+  }
+
+  function secretNote() {
+    return devOn() ? 'Dev Mode is unlocked on this browser.' : 'Have a code? Enter it to unlock extras.';
+  }
+
+  function secretField() {
+    const row = el('div', 'prefs__field prefs__secret');
+    const text = el('span', 'prefs__text');
+    const title = el('label', 'prefs__name', 'Secret code');
+    const note = el('span', 'prefs__note', secretNote());
+    text.append(title, note);
+    const form = el('form', 'secret');
+    form.noValidate = true;
+    const input = el('input', 'prefs__input secret__input');
+    input.id = 'prefs-secret';
+    input.type = 'password';
+    input.inputMode = 'numeric';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.maxLength = 32;
+    input.placeholder = 'Enter code';
+    title.htmlFor = input.id;
+    const go = el('button', 'secret__go');
+    go.type = 'submit';
+    go.setAttribute('aria-label', 'Unlock');
+    go.append(svgIcon('right', 'secret__go-icon'));
+    form.append(input, go);
+    let checking = false;
+    input.addEventListener('input', () => {
+      note.classList.remove('is-error');
+      note.textContent = secretNote();
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (checking) return;
+      const code = input.value.trim();
+      if (!code) {
+        shakeNode(form);
+        input.focus({ preventScroll: true });
+        return;
+      }
+      checking = true;
+      form.classList.add('is-busy');
+      go.disabled = true;
+      const result = await unlockDev(code);
+      checking = false;
+      form.classList.remove('is-busy');
+      go.disabled = false;
+      if (!row.isConnected) return;
+      if (result === 'ok') {
+        const fresh = !devOn();
+        input.value = '';
+        input.blur();
+        setDev({ on: true });
+        note.classList.remove('is-error');
+        note.textContent = secretNote();
+        row.classList.add('is-unlocked');
+        if (fresh) pushNotice('Dev Mode unlocked', { tone: 'success', icon: 'code', detail: 'New tools are waiting at the bottom of Settings.', key: 'dev-on', gap: 2000 });
+        showDevGroup();
+        return;
+      }
+      shakeNode(form);
+      note.classList.add('is-error');
+      note.textContent = {
+        wrong: "That code didn't work.",
+        slow: 'Too many tries. Wait a few minutes and try again.',
+        off: "Codes aren't set up on this server yet."
+      }[result] || "Couldn't check the code right now. Try again in a moment.";
+      input.select();
+    });
+    if (devOn()) row.classList.add('is-unlocked');
+    row.append(text, form);
+    return row;
+  }
+
+  function devAction(name, note, label, run) {
+    const row = el('div', 'prefs__row dev__row');
+    const text = el('span', 'prefs__text');
+    text.append(el('span', 'prefs__name', name), el('span', 'prefs__note', note));
+    const button = el('button', 'dev__btn', label);
+    button.type = 'button';
+    button.dataset.label = label;
+    button.addEventListener('click', () => run(button));
+    row.append(text, button);
+    return row;
+  }
+
+  function devSwitch(name, note, key, run) {
+    const row = el('label', 'prefs__row dev__row');
+    const text = el('span', 'prefs__text');
+    text.append(el('span', 'prefs__name', name), el('span', 'prefs__note', note));
+    const input = el('input', 'prefs__switch');
+    input.type = 'checkbox';
+    input.setAttribute('role', 'switch');
+    input.checked = Boolean(devState()[key]);
+    input.addEventListener('change', () => {
+      setDev({ [key]: input.checked });
+      run(input.checked);
+    });
+    row.append(text, input);
+    return row;
+  }
+
+  function devGroup() {
+    const group = settingsGroup('Developer Access', [
+      devAction('Mobile screen', 'See the screen phones and tablets get', 'Preview', previewMobileGate),
+      devAction('Notifications', 'Show one of every notice style', 'Test', testNotices),
+      devAction('Error screen', 'Preview the screen shown after repeated errors', 'Preview', () => crashScreen({ preview: true })),
+      devSwitch('Performance meter', 'Live frame rate and quality tier in the corner', 'hud', perfMeter),
+      devAction('Re-test performance', 'Forget the saved result and measure this device again', 'Re-test', retestFx),
+      devAction('Clear site data', 'Wipe settings, history and progress on this browser', 'Clear', wipeSite),
+      devAction('Lock Dev Mode', 'Hide these tools until the code is entered again', 'Lock', lockDev)
+    ]);
+    group.classList.add('settings__group--dev');
+    return group;
+  }
+
+  function showDevGroup() {
+    if (!settingsMount || settingsMount.querySelector('.settings__group--dev')) return;
+    const foot = settingsMount.querySelector('.settings__foot');
+    if (!foot) return;
+    const group = devGroup();
+    foot.before(group);
+    if (reduced.matches) return;
+    group.animate(
+      [
+        { opacity: 0, filter: 'blur(6px)', translate: '0 12px' },
+        { opacity: 1, filter: 'blur(0px)', translate: '0 0' }
+      ],
+      { duration: 560, easing: EASE }
+    );
+  }
+
+  function lockDev() {
+    try {
+      localStorage.removeItem(DEV_KEY);
+    } catch (err) {
+      storageFailed();
+    }
+    perfMeter(false);
+    const secret = settingsMount ? settingsMount.querySelector('.prefs__secret') : null;
+    if (secret) {
+      secret.classList.remove('is-unlocked');
+      const note = secret.querySelector('.prefs__note');
+      if (note) note.textContent = secretNote();
+    }
+    pushNotice('Dev Mode locked', { tone: 'info', icon: 'lock', detail: 'Enter the code again to bring the tools back.', key: 'dev-off', gap: 0 });
+    const group = settingsMount ? settingsMount.querySelector('.settings__group--dev') : null;
+    if (!group) return;
+    if (reduced.matches) {
+      group.remove();
+      return;
+    }
+    group.style.overflow = 'hidden';
+    const out = group.animate(
+      [
+        { opacity: 1, height: `${group.offsetHeight}px`, filter: 'blur(0px)' },
+        { opacity: 0, height: '0px', filter: 'blur(6px)' }
+      ],
+      { duration: 420, easing: EASE, fill: 'forwards' }
+    );
+    settle([out]).then(() => group.remove());
+  }
+
+  function wipeSite(button) {
+    if (!button.classList.contains('is-armed')) {
+      button.classList.add('is-armed');
+      button.textContent = 'Click again';
+      clearTimeout(wipeSite.timer);
+      wipeSite.timer = setTimeout(() => {
+        button.classList.remove('is-armed');
+        button.textContent = button.dataset.label || 'Clear';
+      }, 3200);
+      return;
+    }
+    clearTimeout(wipeSite.timer);
+    progress = {};
+    prefs = { ...PREF_DEFAULTS };
+    try {
+      Object.keys(localStorage).filter((key) => key.startsWith('parallax:')).forEach((key) => localStorage.removeItem(key));
+    } catch (err) {
+      storageFailed();
+    }
+    window.location.reload();
+  }
+
+  function testNotices() {
+    const samples = [
+      ['Heads up', { tone: 'info', detail: 'General info looks like this.' }],
+      ['All set', { tone: 'success', detail: 'Shown when something finishes.' }],
+      ['Careful', { tone: 'warn', detail: 'Shown when something needs attention.' }],
+      ['Something went wrong', { tone: 'error', detail: 'Shown when something fails.', action: { label: 'Retry', run: () => pushNotice('Retried', { tone: 'success', ms: 2400 }) } }]
+    ];
+    samples.forEach(([title, opts], i) => setTimeout(() => pushNotice(title, opts), i * 240));
+  }
+
+  function previewMobileGate() {
+    if (document.querySelector('.gate')) return;
+    const scroll = window.scrollY;
+    showGate();
+    const gate = document.querySelector('.gate');
+    if (!gate) return;
+    const exit = el('button', 'gate__exit');
+    exit.type = 'button';
+    exit.append(svgIcon('close', 'gate__exit-icon'), el('span', null, 'Exit preview'));
+    gate.append(exit);
+    let closed = false;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      leave();
+    };
+    function leave() {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('keydown', onKey, true);
+      const done = () => {
+        gate.remove();
+        document.documentElement.classList.remove('is-gated');
+        window.scrollTo(0, scroll);
+      };
+      if (reduced.matches) {
+        done();
+        return;
+      }
+      settle([gate.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 320, easing: 'ease-in', fill: 'forwards' })]).then(done);
+    }
+    exit.addEventListener('click', leave);
+    document.addEventListener('keydown', onKey, true);
+    if (!reduced.matches) gate.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 420, easing: 'ease-out' });
+    exit.focus({ preventScroll: true });
+  }
+
+  function perfMeter(on) {
+    const existing = document.querySelector('.fx-hud');
+    if (!on) {
+      cancelAnimationFrame(perfMeter.raf || 0);
+      perfMeter.raf = 0;
+      if (existing) existing.remove();
+      return;
+    }
+    if (existing) return;
+    const hud = el('div', 'fx-hud');
+    hud.setAttribute('aria-hidden', 'true');
+    const fps = el('b', 'fx-hud__fps', '--');
+    const worst = el('span', 'fx-hud__worst', '');
+    const tier = el('span', 'fx-hud__tier', '');
+    hud.append(fps, el('span', 'fx-hud__unit', 'fps'), worst, tier);
+    document.body.append(hud);
+    let start = 0;
+    let last = 0;
+    let count = 0;
+    let peak = 0;
+    const loop = (now) => {
+      perfMeter.raf = requestAnimationFrame(loop);
+      if (!start || now - last > 1000) {
+        start = now;
+        last = now;
+        count = 0;
+        peak = 0;
+        return;
+      }
+      peak = Math.max(peak, now - last);
+      last = now;
+      count++;
+      if (now - start < 500) return;
+      const rate = Math.round((count * 1000) / (now - start));
+      fps.textContent = String(rate);
+      worst.textContent = `${Math.round(peak)}ms`;
+      tier.textContent = FX_LABEL[document.documentElement.dataset.fx] || 'High';
+      hud.classList.toggle('is-slow', rate < 40);
+      start = now;
+      count = 0;
+      peak = 0;
+    };
+    perfMeter.raf = requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('error', (e) => {
+    const message = e.message || '';
+    if (!e.error && (!message || message === 'Script error.')) return;
+    if (/ResizeObserver loop/i.test(message)) return;
+    reportFault(e.error || message);
+  });
+
+  window.addEventListener('unhandledrejection', (e) => {
+    const reason = e.reason;
+    if (reason && (reason.name === 'AbortError' || reason.name === 'NotAllowedError')) return;
+    reportFault(reason);
+  });
+
+  window.addEventListener('offline', offlineNotice);
+  window.addEventListener('online', backOnline);
+  fxApply();
+  if (devOn() && devState().hud) perfMeter(true);
+  if (navigator.onLine === false) offlineNotice();
 
   const depth = document.getElementById('depth');
   const DEPTH_SLOTS = [
